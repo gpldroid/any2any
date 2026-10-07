@@ -1,1 +1,36 @@
-import {redirect} from "next/navigation";import {createClient} from "@/lib/supabase/server";export default async function Admin(){const supabase=await createClient();const{data:{user}}=await supabase.auth.getUser();if(!user)redirect("/admin/login");const{data:profile}=await supabase.from("profiles").select("role,display_name").eq("id",user.id).maybeSingle();if(profile?.role!=="admin")return <main className="shell"><h1>Access denied</h1><p className="muted">Authenticated, but not an administrator.</p></main>;const{data:formats}=await supabase.from("converter_formats").select("slug,title,enabled").order("sort_order");const{data:history}=await supabase.from("conversions").select("source_name,target_format,status,created_at").order("created_at",{ascending:false}).limit(20);return <main className="admin"><div className="nav"><h1>Any2Any Admin</h1><form action="/api/auth/signout" method="post"><button className="btn">Sign out</button></form></div><section className="card"><h2>Converter formats</h2><table className="table"><thead><tr><th>Format</th><th>Title</th><th>Enabled</th></tr></thead><tbody>{formats?.map(f=><tr key={f.slug}><td>{f.slug}</td><td>{f.title}</td><td>{f.enabled?"Yes":"No"}</td></tr>)}</tbody></table></section><section className="card" style={{marginTop:20}}><h2>Recent conversions</h2><table className="table"><thead><tr><th>Source</th><th>Target</th><th>Status</th><th>Date</th></tr></thead><tbody>{history?.map((h,i)=><tr key={i}><td>{h.source_name}</td><td>{h.target_format}</td><td>{h.status}</td><td>{new Date(h.created_at).toLocaleString()}</td></tr>)}</tbody></table></section></main>}
+import {redirect} from "next/navigation";
+import {createClient} from "@/lib/supabase/server";
+
+export default async function Admin(){
+  const supabase=await createClient();
+  const {data:{user}}=await supabase.auth.getUser();
+  if(!user) redirect("/admin/login");
+
+  const {data:isAdmin,error:adminError}=await supabase.rpc("is_admin");
+  if(adminError || !isAdmin){
+    return <main className="shell"><h1>Access denied</h1><p className="muted">
+      {adminError ? "Could not verify administrator permissions." : "Authenticated, but not an administrator."}
+    </p></main>;
+  }
+
+  const [{data:profile},{data:formats},{data:history}]=await Promise.all([
+    supabase.from("profiles").select("display_name").eq("id",user.id).maybeSingle(),
+    supabase.from("converter_formats").select("slug,title,enabled").order("sort_order"),
+    supabase.from("conversions").select("source_name,target_format,status,created_at").order("created_at",{ascending:false}).limit(20)
+  ]);
+
+  return <main className="admin">
+    <div className="nav">
+      <div><h1>Any2Any Admin</h1><p className="muted">{profile?.display_name || user.email}</p></div>
+      <form action="/api/auth/signout" method="post"><button className="btn">Sign out</button></form>
+    </div>
+    <section className="card"><h2>Converter formats</h2><table className="table">
+      <thead><tr><th>Format</th><th>Title</th><th>Enabled</th></tr></thead>
+      <tbody>{formats?.map(f=><tr key={f.slug}><td>{f.slug}</td><td>{f.title}</td><td>{f.enabled?"Yes":"No"}</td></tr>)}</tbody>
+    </table></section>
+    <section className="card" style={{marginTop:20}}><h2>Recent conversions</h2><table className="table">
+      <thead><tr><th>Source</th><th>Target</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>{history?.map((h,i)=><tr key={i}><td>{h.source_name}</td><td>{h.target_format}</td><td>{h.status}</td><td>{new Date(h.created_at).toLocaleString()}</td></tr>)}</tbody>
+    </table></section>
+  </main>;
+}
